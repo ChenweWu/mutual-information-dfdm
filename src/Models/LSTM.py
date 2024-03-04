@@ -50,7 +50,7 @@ class ZeroInputCheckLayer(tf.keras.layers.Layer):
         )
 
     def call(self, inputs):
-        print('tf.shape(inputs)',tf.shape(inputs))
+        # print('tf.shape(inputs)',tf.shape(inputs))
         
         if tf.reduce_all(inputs == 0):
             outs = tf.expand_dims(self.learnable_vector, axis=0)
@@ -240,23 +240,53 @@ def create_monitor(monitor_var='val_loss', min_delta=1e-3, patience=8, verbose=1
     return monitor
 
 # fit network
-def train_model(model, train_X, train_y, val_X, val_y, monitor, plot=None, epochs=50, batch_size=16, verbose=0, weights=None):
-    if monitor:
-        monitor = create_monitor()
-        if weights:
-            history = model.fit(train_X, train_y, epochs=epochs, batch_size=batch_size, validation_data=(val_X, val_y), verbose=verbose, shuffle=False, callbacks=[monitor], class_weight=weights)
-        else:
-            history = model.fit(train_X, train_y, epochs=epochs, batch_size=batch_size, validation_data=(val_X, val_y), verbose=verbose, shuffle=False, callbacks=[monitor], class_weight=weights)
+def train_model(model, train_X, train_y, val_X, val_y, monitor, plot=None, epochs=50, batch_size=16, verbose=0, weights=None,pid=False):
+    if pid:
+        optimizer = tf.keras.optimizers.Adam()
+        x, x_aux = train_X[0], train_X[1]
+        train_X = tf.convert_to_tensor(x, dtype=tf.float32)  # train_X shape: (1220, 3, 34)
+        train_X_aux = tf.convert_to_tensor(x_aux, dtype=tf.float32)  # train_X_aux shape: (1220, 3, 1024)
+        train_y = tf.convert_to_tensor(train_y, dtype=tf.float32)  # Assuming train_y has a compatible shape
+
+        # Create a tf.data.Dataset object from your tensors
+        # The dataset will yield tuples of ((X, X_aux), y)
+        dataset = tf.data.Dataset.from_tensor_slices(((train_X, train_X_aux), train_y))
+        # Batch the dataset
+        batch_size = 16
+        dataset = dataset.batch(batch_size)
+        @tf.function
+        def train_step(model, inputs, optimizer):
+            with tf.GradientTape() as tape:
+                loss = pid_loss(model, inputs)
+                
+            gradients = tape.gradient(loss, model.trainable_variables)
+            optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+            return loss
+
+        # Example training loop
+        for epoch in range(epochs):
+            for inputs in dataset:
+                # loss = train_step(model, inputs, optimizer)
+                loss = model.train_step(inputs)
+                # print(f'Epoch {epoch}, Loss: {loss}')
     else:
-        history = model.fit(train_X, train_y, epochs=epochs, batch_size=batch_size, validation_data=(val_X, val_y), verbose=verbose, shuffle=False)
-    
-    if plot:
-        # plot history
-        plt.plot(history.history['loss'], label='train')
-        plt.plot(history.history['val_loss'], label='validation')
-        plt.title('Train - Validation Loss Plot')
-        plt.legend()
-        plt.show()
+        
+        if monitor:
+            monitor = create_monitor()
+            if weights:
+                history = model.fit(train_X, train_y, epochs=epochs, batch_size=batch_size, validation_data=(val_X, val_y), verbose=verbose, shuffle=False, callbacks=[monitor], class_weight=weights)
+            else:
+                history = model.fit(train_X, train_y, epochs=epochs, batch_size=batch_size, validation_data=(val_X, val_y), verbose=verbose, shuffle=False, callbacks=[monitor], class_weight=weights)
+        else:
+            history = model.fit(train_X, train_y, epochs=epochs, batch_size=batch_size, validation_data=(val_X, val_y), verbose=verbose, shuffle=False)
+        
+        if plot:
+            # plot history
+            plt.plot(history.history['loss'], label='train')
+            plt.plot(history.history['val_loss'], label='validation')
+            plt.title('Train - Validation Loss Plot')
+            plt.legend()
+            plt.show()
         
 
         

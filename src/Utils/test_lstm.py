@@ -206,8 +206,10 @@ def calculate_mean_std(lstm_layers, nn_layers, sequence, features, dense_acivati
         if fusion == 'joint':
             """ Create the Model """
             if recurrent_cells != 'Transformer':
+                print("we running j1")
                 model_2 = create_model(lstm_layers, nn_layers, x_ar.shape[1], x_ar.shape[2], dense_acivation, recurrent_cells, bidirectional, backbone=backbone, weights=weights, freeze=freeze, projection=projection, learnable_vector=learnable_vector)
             else:
+                print("we running j2")
                 model_2 = create_transformer_model(head_size=head_size, num_heads=num_heads, ff_dim=ff_dim, num_transformer_blocks=4, nn_layers=nn_layers, sequence=x_ar.shape[1], features=x_ar.shape[2], dropout=dropout)
 
             
@@ -215,8 +217,10 @@ def calculate_mean_std(lstm_layers, nn_layers, sequence, features, dense_acivati
             if (type(x_ar_2) != none_type) and (type(x_ar_test_2) != none_type):
                 """ Create the Model 3 """
                 if recurrent_cells != 'Transformer':
+                    print("we running j3")
                     model_3 = create_model(lstm_layers, nn_layers, x_ar_2.shape[1], x_ar_2.shape[2], dense_acivation, recurrent_cells, bidirectional, backbone=backbone, weights=weights, freeze=freeze, projection=projection, learnable_vector=learnable_vector)
                 else:
+                    print("we running j4")
                     model_3 = create_transformer_model(head_size=head_size, num_heads=num_heads, ff_dim=ff_dim, num_transformer_blocks=4, nn_layers=nn_layers, sequence=x_ar_2.shape[1], features=x_ar_2.shape[2], dropout=dropout)
                 
                 # Merging models
@@ -225,11 +229,11 @@ def calculate_mean_std(lstm_layers, nn_layers, sequence, features, dense_acivati
                 # Merging models
                 final_model = create_aggregation_model(model, model_2, fusion=fusion)
             
-            train_model(final_model, [train_X, x_ar], train_y, [test_X, x_ar_test], test_y, monitor, plot, epochs, batch_size)
+            train_model(final_model, [train_X, x_ar], train_y, [test_X, x_ar_test], test_y, monitor, plot, epochs, batch_size,pid=True)
             
         else:
             """ Train the Model 1 (Images)"""
-            train_model(model, train_X, train_y, test_X, test_y, monitor, plot, epochs, batch_size)
+            train_model(model, train_X, train_y, test_X, test_y, monitor, plot, epochs, batch_size,pid=True)
         
         """ Evaluate the Model """
         if fusion:
