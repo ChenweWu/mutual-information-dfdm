@@ -2,6 +2,10 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+Original repo by David Restrepo: https://github.com/dsrestrepo/DF-DM/
+
+
+
 This repository contains two use cases for the DF-DM model. A domestic violence report prediction for Public Health, and diabetic rethinopathy prediction for retina fundus photos images.
 
 ## Table of Contents
