@@ -229,11 +229,11 @@ def calculate_mean_std(lstm_layers, nn_layers, sequence, features, dense_acivati
                 # Merging models
                 final_model = create_aggregation_model(model, model_2, fusion=fusion)
             
-            train_model(final_model, [train_X, x_ar], train_y, [test_X, x_ar_test], test_y, monitor, plot, epochs, batch_size,pid=True)
+            train_model(final_model, [train_X, x_ar], train_y, [test_X, x_ar_test], test_y, monitor, plot, epochs, batch_size,pid=False)
             
         else:
             """ Train the Model 1 (Images)"""
-            train_model(model, train_X, train_y, test_X, test_y, monitor, plot, epochs, batch_size,pid=True)
+            train_model(model, train_X, train_y, test_X, test_y, monitor, plot, epochs, batch_size,pid=False)
         
         """ Evaluate the Model """
         if fusion:

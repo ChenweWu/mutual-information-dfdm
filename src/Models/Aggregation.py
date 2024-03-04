@@ -3,9 +3,12 @@ import tensorflow as tf
 from tensorflow import keras
 import tensorflow_addons as tfa
 from tensorflow.keras import Sequential, Model, layers
-from tensorflow.keras.layers import Dense, concatenate, Flatten
+from tensorflow.keras.layers import Dense, concatenate, Flatten,MultiHeadAttention
 import tensorflow.keras.backend as K
-from tensorflow.keras import layers
+# The above code is a Python code snippet that is commented out. It appears to be importing the
+# `layers` module from `tensorflow.keras` library, but the import statement is commented out with `#`.
+# This means that the import statement is not active and will not be executed when the code is run.
+# from tensorflow.keras import layers
 import matplotlib.pyplot as plt
 
 """ Create the Model """
@@ -92,6 +95,124 @@ class OuterProductLayer(Layer):
         return Flatten()(outer_product)
 
 def create_aggregation_model(model, model_2, model_3=None, fusion=None, dense_acivation='relu'):
+    L=128
+    D=64
+
+    print(model.summary(), "model1 sum")
+
+    if fusion == 'early' or 'late':
+        modelc = Sequential(model.layers[:-1])
+        modelc.trainable = False
+        model_2c = Sequential(model_2.layers[:-1])
+        model_2c.trainable = False
+        if model_3:
+            model_3 = Sequential(model_3.layers[:-1])
+            model_3.trainable = False
+
+    if model_3:
+        input3 = model_3.input
+        out_3 = model_3(input3)
+    # Create a Sequential Model
+    input1 = modelc.inputs
+    input2 = model_2c.input
+    out_1 = modelc(input1)
+    out_2 = model_2c(input2)
+    out_1c = model(input1)
+    out_2c = model_2(input2)
+
+    fusion_features = OuterProductLayer()((out_1,out_2))
+    print(fusion_features.shape)
+    out1_i = Dense(120, activation=dense_acivation)(out_1)
+    out2_i = Dense(120, activation=dense_acivation)(out_2)
+    out_x = Dense(120, activation=dense_acivation)(concatenate((out_1,out_2)))
+    # Assuming self.fusion_fc is a Keras layer
+    x = Dense(256, activation=dense_acivation)(fusion_features)
+
+    x = Dense(120, activation=dense_acivation)(x)
+
+    estimator_net = tf.keras.Sequential([
+            tf.keras.layers.Dense(64, activation='relu'),
+            tf.keras.layers.Dense(1,activation='sigmoid')  # Outputs a scalar
+        ])
+    estimator_net2 = tf.keras.Sequential([
+            tf.keras.layers.Dense(64, activation='relu'),
+            tf.keras.layers.Dense(1,activation='sigmoid')  # Outputs a scalar
+        ])
+    estimator_net3 = tf.keras.Sequential([
+            tf.keras.layers.Dense(64, activation='relu'),
+            tf.keras.layers.Dense(1,activation='sigmoid')  # Outputs a scalar
+        ])
+    joint_estimate = estimator_net(out_x)
+    out_x = Dense(10,activation=dense_acivation)(out_x)
+    x = concatenate([x,out_1,out_2,out_x])
+    print(x.shape,out_1.shape,out_2.shape)
+    # print(intermediate.shape,"inter")
+    marginal_estimate_1 = estimator_net2(out1_i)
+    marginal_estimate_2 = estimator_net2(out2_i)
+    
+    
+    x = Dense(64, activation=dense_acivation)(x)
+
+    x = Dense(32, activation=dense_acivation)(x)
+
+    x = Dense(16, activation= dense_acivation)(x)
+    output_layer = Dense(1)(x)
+
+    #Model Definition
+    final_model = Model(inputs=[(input1, input2)], outputs=[output_layer])
+
+
+    # Compile the model:
+    if int(tf.__version__.split('.')[1]) >= 11:
+        opt = tf.keras.optimizers.legacy.Adam(lr=0.001)
+    else:
+        opt = tf.keras.optimizers.Adam(lr=0.001)
+
+    # Metrics
+    metrics = [
+        tf.keras.metrics.RootMeanSquaredError(name='rmse'),
+        tf.keras.metrics.MeanAbsoluteError(name='mae'),
+        smape
+    ]
+
+    final_model.add_loss(  -0.1*(tf.reduce_mean(joint_estimate) - tf.math.log(tf.reduce_mean(tf.exp(marginal_estimate_1))))-0.1*(tf.reduce_mean(joint_estimate) - tf.math.log(tf.reduce_mean(tf.exp(marginal_estimate_2))))  )
+    # final_model.add_loss()
+    final_model.compile(loss='mse', optimizer=opt, metrics=metrics)
+    return final_model
+avg_loss = tf.keras.metrics.Mean('loss', dtype=tf.float32)
+
+class custom_fit(tf.keras.Model):
+    def train_step(self, data):
+        inputs, labels = data
+        with tf.GradientTape() as tape:
+            outputs = self(inputs, training=True) # forward pass 
+            reg_loss = tf.reduce_sum(self.losses)
+            pred_loss = loss(labels, outputs)
+            total_loss = tf.reduce_sum(pred_loss) + reg_loss
+        gradients = tape.gradient(total_loss, self.trainable_variables)
+        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        avg_loss.update_state(total_loss)
+        return {"loss": avg_loss.result()}
+    
+    @property
+    def metrics(self):
+        # We list our `Metric` objects here so that `reset_states()` can be
+        # called automatically at the start of each epoch
+        # or at the start of `evaluate()`.
+        # If you don't implement this property, you have to call
+        # `reset_states()` yourself at the time of your choosing.
+        return [avg_loss]
+    
+def custom_loss_with_intermediate(y_true, model_outputs):
+    y_pred = model_outputs[0]
+    intermediate_output = model_outputs[1]
+ # Unpack the outputs
+    # Define the loss calculation using both y_pred and intermediate_output
+    loss = tf.reduce_mean(tf.square(y_true - y_pred))  # Example: MSE loss for the final output
+    # intermediate_loss = some_function_of(intermediate_output)  # Custom logic for intermediate
+    return loss  # Combine losses
+    
+def create_aggregation_model_tr(model, model_2, model_3=None, fusion=None, dense_acivation='relu'):
     embed_size = 512
     num_heads = 8
     hidden_units = [512, 256]
@@ -404,30 +525,46 @@ class MultiHeadAttention(layers.Layer):
         output = self.dense(concat_output)  # (batch_size, seq_len_q, embed_size)
         return output
 
-class MLP(layers.Layer):
-    def __init__(self, hidden_units, output_units):
-        super(MLP, self).__init__()
-        self.hidden_layers = [layers.Dense(unit, activation='relu', kernel_initializer='he_normal') for unit in hidden_units]
-        self.output_layer = layers.Dense(output_units, activation='relu',kernel_initializer='glorot_uniform')
+import tensorflow as tf
+from tensorflow.keras import Model, layers
 
-    def call(self, x):
-        for layer in self.hidden_layers:
-            x = layer(x)
-        return self.output_layer(x)
+# class MLP(Model):
+#     def __init__(self, hidden_units, output_units):
+#         super(MLP, self).__init__()
+#         self.hidden_layers = [layers.Dense(unit, activation='relu', kernel_initializer='he_normal') for unit in hidden_units]
+#         self.output_layer = layers.Dense(output_units, activation='relu', kernel_initializer='glorot_uniform')
+
+#     def call(self, inputs):
+#         x = inputs
+#         for layer in self.hidden_layers:
+#             x = layer(x)
+#         return self.output_layer(x)
 class DisentangledTransformer(tf.keras.Model):
     def __init__(self, embed_size, num_heads, hidden_units, output_units):
         super(DisentangledTransformer, self).__init__()
 
-        self.mha = layers.MultiHeadAttention(num_heads=num_heads, key_dim=embed_size)
-        self.mlp_q = MLP(hidden_units, output_units)  # for q(b|a)
-        self.mlp_c = MLP(hidden_units, output_units)  # for q(c|s)
-        self.mlp_a = MLP([240,240],240)
-        self.aaaa = tf.keras.models.Sequential([
+        self.mha = tf.keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=embed_size)
+        # self.mlp_q = MLP(hidden_units, output_units)  # for q(b|a)
+        # self.mlp_c = MLP(hidden_units, output_units)  # for q(c|s)
+        # self.mlp_a = MLP([240,240],240)
+        self.mlp_a = tf.keras.models.Sequential([
+            tf.keras.layers.Flatten(input_shape = [240]),
+            tf.keras.layers.Dense(300, activation='relu'),
+            tf.keras.layers.Dense(240, activation='relu'),
+        ])
+        self.mlp_q= tf.keras.models.Sequential([
             tf.keras.layers.Flatten(input_shape = [120]),
             tf.keras.layers.Dense(300, activation='relu'),
-            tf.keras.layers.Dense(100, activation='relu'),
-            tf.keras.layers.Dense(10, activation='softmax'),
+            tf.keras.layers.Dense(150, activation='relu'),
+            tf.keras.layers.Dense(output_units, activation='relu'),
         ])
+        self.mlp_c= tf.keras.models.Sequential([
+            tf.keras.layers.Flatten(input_shape = [120]),
+            tf.keras.layers.Dense(300, activation='relu'),
+            tf.keras.layers.Dense(150, activation='relu'),
+            tf.keras.layers.Dense(output_units, activation='relu'),
+        ])
+            
         # tf.keras.layers.Dense(100, activation='relu'),
         # tf.keras.layers.Dense(10, activation='softmax')
     def call(self, inputs):
@@ -440,33 +577,21 @@ class DisentangledTransformer(tf.keras.Model):
         # z = tf.reshape(z, [16, 1, 240]) 
         # print(z,"ZZZZ")
         # Apply multi-head attention
-        # attn_output = self.mlp_a(z) # self-attention
-        attn_output = z
-        print(attn_output,"result")
+        attn_output = self.mlp_a(z) # self-attention
+        # attn_output = z
+        print(attn_output,"attn_output")
         # Split features back into zh and zg
         # This would depend on how you want to split them. Here's a simple way:
         split_dim = tf.shape(zh)[1]
         zh_attn, zg_attn = attn_output[:, :split_dim], attn_output[:, split_dim:]
 
         # Apply the MLP for q(b|a) and q(c|s)
-        q_b_given_a_output = self.aaaa(zh_attn)  # variational approximation q(b|zh)
-        print("+++++++++++========",q_b_given_a_output)
+        q_b_given_a_output = self.mlp_q(zh_attn)  # variational approximation q(b|zh)
+        # print("+++++++++++========",q_b_given_a_output)
         q_c_given_s_output = self.mlp_c(zg_attn)  # variational approximation q(c|zg)
         
         return {'q_sh_given_c': q_b_given_a_output, 'q_sg_given_c': q_c_given_s_output,'c':z,'sh':zh,'sg':zg,'q_c_given_s':attn_output}
-def pid_loss(sh, sg, c, q_c_given_s, q_sh_given_c, q_sg_given_c):
-    """
-    Disentangle loss: L_PID
-    """
-    s = tf.concat([sh, sg], axis=-1) # Concatenate modality-specific features
-    lvclub_s_c = vclub_loss(q_c_given_s)
-    lvclub_sh_sg = vclub_loss( q_sh_given_c)
-    lestimator_s_c = estimator_loss(c, s, q_c_given_s)
-    lestimator_sh_sg = estimator_loss(s, c, q_sg_given_c)
-    print(lvclub_s_c ,lvclub_sh_sg ,lestimator_s_c ,lestimator_sh_sg,"LOSS DECOMPOSED")
-    # Sum the individual loss components
-    loss = lvclub_s_c + lvclub_sh_sg + lestimator_s_c + lestimator_sh_sg
-    return loss
+
 def vclub_loss(q_b_given_a):
     """
     Variational CLUB loss: L_vCLUB(b, a)
@@ -499,7 +624,12 @@ def estimator_loss(b, a, q_b_given_a):
 class RegressionMLP(Model):
     def __init__(self, hidden_units, output_units):
         super(RegressionMLP, self).__init__()
-        self.mlp = MLP(hidden_units, output_units)
+        self.mlp= tf.keras.models.Sequential([
+            # tf.keras.layers.Flatten(input_shape = [120]),
+            tf.keras.layers.Dense(300, activation='relu'),
+            tf.keras.layers.Dense(150, activation='relu'),
+            tf.keras.layers.Dense(1),
+        ])
 
     def call(self, x):
         return self.mlp(x)
